@@ -1,79 +1,64 @@
 import path from "path";
 import fs from "fs";
 import { spawn } from "child_process";
-import fsExtra from "fs-extra/esm";
-
-// const credentials = {
-//   "accessKeyId": process.env.ACCESS_KEY_ID,
-//   "secretAccessKey": process.env.SECRET_ACCESS_KEY,
-//   "region": process.env.REGION,
-//   "bucket": process.env.BUCKET_NAME
-// }
+import fsExtra from "fs-extra";
+import { uploadOnCloudinary } from "../utils/cloudinary.js";
+import { ApiError } from "../utils/ApiError.js"; // Assuming you have this utility
 
 const videoUpload = async (req, res) => {
-  
   try {
     if (!req.file) {
-      throw new ApiError({
-        status: 400,
-        message: "No video file uploaded",
-      });
+      throw new ApiError(400, "No video file uploaded");
     }
 
     const fileProperty = req.file.mimetype.split('/');
     if (fileProperty[0] !== 'video') {
-      throw new ApiError({
-        status: 404,
-        message: "Not a supported File Format, Upload Video Only",
-      });
+      throw new ApiError(400, "Not a supported File Format, Upload Video Only");
     }
 
     const newPath = req.file.path;
-    const filename = path.basename(newPath).split(".")
+    const filename = path.basename(newPath).split(".");
 
-    console.log(`${filename[0]} ${filename[1]}`);
+    console.log(`Processing file: ${filename[0]}.${filename[1]}`);
 
     const cmdPath = "src/createHLS.sh";
 
     const createHLSVOD = spawn("bash", [cmdPath, filename[0], filename[1]]);
     createHLSVOD.stdout.on("data", (d) => console.log(`stdout info: ${d}`));
-    createHLSVOD.stderr.on("data", (d) => console.log(`stdout output: ${d}`));
-    createHLSVOD.on("error", (d) => console.log(`error: ${d}`));
-    createHLSVOD.on("close", (code) => {
+    createHLSVOD.stderr.on("data", (d) => console.log(`stderr output: ${d}`));
+    createHLSVOD.on("error", (d) => console.error(`error: ${d}`));
+    createHLSVOD.on("close", async (code) => {
       console.log(`Child process exited with code ${code}`);
       console.log(`Deleting ${newPath}`);
-      fsExtra.removeSync(newPath);
+      await fsExtra.remove(newPath);
       console.info(`Deleted ${newPath} from videos folder.`);
+
+      const directoryName = `./uploads/${filename[0]}`;
+
+      try {
+        await uploadOnCloudinary(directoryName);
+        await fsExtra.remove(directoryName);
+        console.info(`Deleted ${directoryName} from uploads folder.`);
+      } catch (err) {
+        console.error("Error during Cloudinary upload or directory removal:", err);
+      }
     });
-
-    const directoryName = `./uploads/${filename[0]}`;
-
-    // s3FolderUpload(directoryName, credentials, s3options)
-    // .then(function (doc) {
-    //     fsExtra.removeSync(directoryName);
-    //     console.info(`Deleted ${req.videoId} from uploads folder.`);
-    // })
-    // .catch(function (err) {
-    //     if (err) {
-    //         console.log(err);
-    //     }
-    // });
 
     res.json({
       status: "success",
-      message: "Video Uploaded Successfully",
+      message: "Video processing started",
       videoId: req.file.originalname,
     });
   } catch (error) {
     console.error("An error occurred while processing the video.", error);
 
-    if (req.files?.video?.path && fs.existsSync(req.files.video.path)) {
-      fs.unlinkSync(req.files.video.path);
+    if (req.file?.path && await fsExtra.pathExists(req.file.path)) {
+      await fsExtra.remove(req.file.path);
     }
 
-    res.status(error.message === "Not a supported File Format, Upload Video Only" ? 404 : 500).json({
+    res.status(error.statusCode || 500).json({
       status: "error",
-      message: error.message,
+      message: error.message || "Internal Server Error",
     });
   }
 };

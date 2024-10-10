@@ -24,7 +24,7 @@ rate_monitor_buffer_ratio=1.5   # maximum buffer size between bitrate conformanc
 # second argument in extension
 # first argument is video id
 source="videos/${1}.${2}"
-# s3URL="https://cdn-firestream.s3.ap-south-1.amazonaws.com"
+s3URL="https://res.cloudinary.com/dxyjpcfls/raw/upload/v1725640685"
 target="uploads/${1}"
 if [[ ! "${target}" ]]; then
   target="${source##*/}" # leave only last component of path
@@ -88,4 +88,4 @@ echo -e "${master_playlist}" > ${target}/playlist.m3u8
 echo "Done - encoded HLS is at ${target}/"
 
 rm -f $source
-./curl_to_upload.sh ${1}
+# ./curl_to_upload.sh ${1}
